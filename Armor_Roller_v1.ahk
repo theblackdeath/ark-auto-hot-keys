@@ -2,6 +2,7 @@
 SetWorkingDir(A_ScriptDir)
 
 global pToken := 0  ; Initialize global token
+global hModule := 0  ; ✅ Initialize hModule to prevent unassigned variable error
 global clickX := 0  ; To store F1 position X
 global clickY := 0  ; To store F1 position Y
 global redDotGui := ""  ; GUI for persistent red dot
@@ -9,11 +10,12 @@ global isSearching := false  ; Blocks repeated Space presses in manual mode
 global isF1Set := false       ; Tracks if F1 position is set
 global isLooping := false     ; Tracks if auto-loop (F8) is running
 
+
 ; 🔍 Search Variables (Range with decimals)
 global searchText1 := "magic find increased by %:"
-global searchRange1 := [15.0, 60.0]
+global searchRange1 := [14.0, 60.0]
 global searchText2 := "chance to dodge %:"
-global searchRange2 := [15.0, 60.0]
+global searchRange2 := [20.0, 60.0]
 
 ; Fixed coordinates for screen capture
 global startX := 497, startY := 1
@@ -28,22 +30,58 @@ if !DirExist(imgcheckPath)
 ShowOverlay()
 
 ; Load GDIPlus.dll from System32
-gdiplusPath := "C:\Windows\System32\Gdiplus.dll"
-hModule := DllCall("LoadLibrary", "Str", gdiplusPath, "Ptr")
-if (!hModule) {
-    errorCode := DllCall("GetLastError")
-    MsgBox("❌ Failed to load Gdiplus.dll.`nError Code: " errorCode, "Error", 16)
-    ExitApp()
+; Shutdown GDI+ if already initialized
+if (pToken != 0) {
+    DllCall("gdiplus\GdiplusShutdown", "Ptr", pToken)
+    pToken := 0
 }
 
-; Initialize GDI+
-GdiplusStartupInput := Buffer(16, 0)
-NumPut("UInt", 1, GdiplusStartupInput, 0)  ; Set GDI+ version to 1
-initResult := DllCall("gdiplus\GdiplusStartup", "Ptr*", &pToken, "Ptr", GdiplusStartupInput, "Ptr", 0)
-if (initResult != 0) {
-    MsgBox("❌ Failed to initialize GDI+. Error Code: " initResult, "Error", 16)
-    ExitApp()
+; Free Gdiplus.dll if already loaded
+if (hModule != 0) {
+    DllCall("FreeLibrary", "Ptr", hModule)
+    hModule := 0
 }
+
+Sleep(100) ; Short delay to ensure resources are released
+
+; Retry GDI+ Initialization up to 3 times
+attempts := 0
+maxAttempts := 3
+
+Loop {
+    attempts++
+
+    ; Load GDIPlus.dll from System32
+    gdiplusPath := "C:\Windows\System32\Gdiplus.dll"
+    hModule := DllCall("LoadLibrary", "Str", gdiplusPath, "Ptr")
+    if (!hModule) {
+        errorCode := DllCall("GetLastError")
+        if (attempts >= maxAttempts) {
+            MsgBox("❌ Failed to load Gdiplus.dll after " maxAttempts " attempts. Error Code: " errorCode, "Error", 16)
+            ExitApp()
+        }
+        Sleep(200)  ; Wait before retrying
+        continue  ; Retry loading the DLL
+    }
+
+    ; Initialize GDI+
+    GdiplusStartupInput := Buffer(16, 0)
+    NumPut("UInt", 1, GdiplusStartupInput, 0)  ; Set GDI+ version to 1
+    initResult := DllCall("gdiplus\GdiplusStartup", "Ptr*", &pToken, "Ptr", GdiplusStartupInput, "Ptr", 0)
+
+    if (initResult == 0) {
+        break  ; ✅ Success!
+    }
+
+    if (attempts >= maxAttempts) {
+        MsgBox("❌ Failed to initialize GDI+ after " maxAttempts " attempts. Error Code: " initResult, "Error", 16)
+        ExitApp()
+    }
+
+    Sleep(200)  ; Wait before retrying initialization
+}
+
+
 
 ; Bind shutdown function to exit (which will also delete captured files)
 OnExit(ShutdownGDI)
@@ -66,30 +104,26 @@ F9::StopAutoLoop()          ; F9 stops auto-loop
 
 ; ---------- OVERLAY GUI ----------
 ShowOverlay() {
-    global overlayGui
+    global overlayGui, searchText1, searchRange1, searchText2, searchRange2
     overlayGui := Gui("+AlwaysOnTop -Caption +ToolWindow", "Info Overlay")
     overlayGui.BackColor := "000000"  ; Black background
     WinSetTransparent(102, overlayGui.Hwnd)
     overlayGui.SetFont("s10 cFFFFFF", "Segoe UI")
-    
-    overlayText :=
-    "
-    (
-    📋 **Reroller OCR Script**
-    -------------------------------
-    🔍 Searching for:
-    - Magic find Increased By %: 15.0-60.0
-    - Chance to Dodge %: 15.0-60.0
 
-    🖱️ Controls:
-    - F1: Set Button Press
-    - SPACE: Start Single Search (manual mode blocks repeated presses until completion)
-    - F8: Start Auto Loop
-    - F9: Stop Auto Loop
-    - CTRL+ESC: Exit
-    )"
-    
-    overlayGui.Add("Text", "w210 h200", overlayText)
+   overlayText := "📋 **Armor Roller v1**`n"
+               . "-------------------------------`n"
+               . "🔍 Default Searching for:`n"
+               . "- " searchText1 " " searchRange1[1] "-" searchRange1[2] "`n"
+               . "- " searchText2 " " searchRange2[1] "-" searchRange2[2] "`n"
+               . "(Can change in script)`n`n"
+               . "🖱️ Controls:`n"
+               . "- F1: Set Button Press`n"
+               . "- SPACE: Start Single Search`n"
+               . "- F8: Start Auto Loop`n"
+               . "- F9: Stop Auto Loop`n"
+               . "- CTRL+ESC: Exit"
+
+    overlayGui.Add("Text", "w220 h240", overlayText)
     overlayGui.Show("x10 y10")
 }
 
@@ -180,6 +214,16 @@ RunTesseractOCR(imagePath, pBitmap) {
         extractedText := Trim(FileRead(ocrOutput, "UTF-8"))
         foundMatch := false
         resultMessage := ""
+
+        ; Check for "Equippable" or "stat bonuses" without saving OCR text
+        if !(InStr(extractedText, "Equippable") || InStr(extractedText, "stat bonuses")) {
+            MsgBox("⚠️ 'Equippable' or 'stat bonuses' not found. Jobs Done! (Orc Accent)", "Loop Stopped", 48)
+            isLooping := false
+            isSearching := false
+            return
+        }
+
+        ; Search for specific stat bonuses
         if RegExMatch(extractedText, "(?i)" . searchText1 . "\s*(\d+(\.\d+)?)", &match1) {
             value1 := match1[1]
             if (value1 >= searchRange1[1] && value1 <= searchRange1[2]) {
@@ -194,6 +238,8 @@ RunTesseractOCR(imagePath, pBitmap) {
                 resultMessage .= "Chance to Dodge matched with value: " value2 "."
             }
         }
+
+        ; Show result and control looping
         if (foundMatch) {
             ShowResultBox("00FF00", 5000)
             if (isLooping) {
@@ -208,7 +254,7 @@ RunTesseractOCR(imagePath, pBitmap) {
                 DllCall("mouse_event", "UInt", 0x0004, "UInt", 0, "UInt", 0, "UInt", 0, "Ptr", 0)
                 Sleep(1000)
                 if (isLooping)
-                    PerformClickAndOCR()
+                    SetTimer(PerformClickAndOCR, -1000)  ; Schedule next iteration after 1 second
             } else {
                 Sleep(5000)
                 isSearching := false
@@ -217,7 +263,7 @@ RunTesseractOCR(imagePath, pBitmap) {
             ShowResultBox("FF0000", 2000)
             if (isLooping) {
                 Sleep(2000)
-                PerformClickAndOCR()
+                SetTimer(PerformClickAndOCR, -1000)  ; Schedule next iteration after 1 second
             } else {
                 isSearching := false
             }
@@ -228,6 +274,7 @@ RunTesseractOCR(imagePath, pBitmap) {
             isSearching := false
     }
 }
+
 
 ; ---------- SHOW RESULT BOX ----------
 ShowResultBox(color, duration) {
@@ -257,6 +304,8 @@ StartAutoLoop() {
     ToolTip("🔄 Auto Loop Started (Press F9 to stop)")
     Sleep(1500)
     ToolTip()
+    
+    ; Start the first iteration
     PerformClickAndOCR()
 }
 
