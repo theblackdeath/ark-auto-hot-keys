@@ -13,9 +13,9 @@ global isF1Set := false      ; Tracks if F1 position is set
 global isLooping := false    ; Tracks if auto-loop (F8) is running
 
 ; 🔍 Search Variables (Range with decimals)
-global searchText1 := "melee damage increased by %:"
+global searchText1 := "Melee Damage Increased By %:"
 global searchRange1 := [50.0, 180.0]
-global searchText2 := "chance to dodge %:"
+global searchText2 := "Chance To Dodge %:"
 global searchRange2 := [150.0, 600.0]
 
 ; Global: Maximum allowed failed searches
@@ -329,7 +329,7 @@ RunTesseractOCR(imagePath, pBitmap) {
     
     outputBase := imgcheckPath . "\\Captured_Image"
     ocrOutput := outputBase . "_1.txt"
-    RunWait("tesseract.exe " . '"' . imagePath . '" "' . outputBase . '_1" --psm 6 --oem 1', , "Hide")
+    RunWait("tesseract.exe " . '"' . imagePath . '" "' . outputBase . '_1" --psm 6 --oem 1 -l eng', , "Hide")
     
     if (FileExist(ocrOutput)) {
         extractedText := Trim(FileRead(ocrOutput, "UTF-8"))
@@ -354,7 +354,10 @@ RunTesseractOCR(imagePath, pBitmap) {
             FlashGreenCountGui(4000)  ; Flash the red box green for 4 seconds
             
             ; "Success" actions:
-            Sleep(1000)
+            Sleep(1300)
+			DllCall("mouse_event", "UInt", 0x0002, "UInt", 0, "UInt", 0, "UInt", 0, "Ptr", 0)
+            Sleep(15)
+            DllCall("mouse_event", "UInt", 0x0004, "UInt", 0, "UInt", 0, "UInt", 0, "Ptr", 0)
             Sleep(300)
             Send("t")
             Sleep(500)

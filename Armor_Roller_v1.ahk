@@ -13,9 +13,9 @@ global isF1Set := false      ; Tracks if F1 position is set
 global isLooping := false    ; Tracks if auto-loop (F8) is running
 
 ; 🔍 Search Variables (Range with decimals)
-global searchText1 := "magic find increased by %:"
+global searchText1 := "Magic Find Increased By %:"
 global searchRange1 := [11.0, 60.0]
-global searchText2 := "chance to dodge %:"
+global searchText2 := "Chance To Dodge %:"
 global searchRange2 := [20.0, 60.0]
 
 ; Global: Maximum allowed failed searches
@@ -329,7 +329,7 @@ RunTesseractOCR(imagePath, pBitmap) {
     
     outputBase := imgcheckPath . "\\Captured_Image"
     ocrOutput := outputBase . "_1.txt"
-    RunWait("tesseract.exe " . '"' . imagePath . '" "' . outputBase . '_1" --psm 6 --oem 1', , "Hide")
+    RunWait("tesseract.exe " . '"' . imagePath . '" "' . outputBase . '_1" --psm 6 --oem 1 -l eng', , "Hide")
     
     if (FileExist(ocrOutput)) {
         extractedText := Trim(FileRead(ocrOutput, "UTF-8"))
